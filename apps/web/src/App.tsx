@@ -1,11 +1,7 @@
-import './App.css'
+import Chat from './Chat'
 
 function App() {
-  return (
-    <div className="app">
-      <h1>AgentClaw</h1>
-    </div>
-  )
+  return <Chat />
 }
 
 export default App
