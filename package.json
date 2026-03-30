@@ -1,0 +1,20 @@
+{
+  "name": "agentclaw",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "concurrently -n web,server -c blue,green \"pnpm --filter @agentclaw/web dev\" \"pnpm --filter @agentclaw/servers dev\"",
+    "dev:web": "pnpm --filter @agentclaw/web dev",
+    "dev:server": "pnpm --filter @agentclaw/servers dev",
+    "build": "pnpm --filter @agentclaw/web build && pnpm --filter @agentclaw/servers build",
+    "build:web": "pnpm --filter @agentclaw/web build",
+    "build:server": "pnpm --filter @agentclaw/servers build",
+    "start": "concurrently -n web,server -c blue,green \"pnpm --filter @agentclaw/web preview -- --host\" \"pnpm --filter @agentclaw/servers start\"",
+    "start:web": "pnpm --filter @agentclaw/web preview -- --host",
+    "start:server": "pnpm --filter @agentclaw/servers start",
+    "type-check": "pnpm --filter @agentclaw/web type-check && pnpm --filter @agentclaw/servers build -- --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

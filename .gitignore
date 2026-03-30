@@ -1,6 +1,7 @@
 # dependencies
 node_modules/
 apps/*/node_modules/
+packages/*/node_modules/
 servers/node_modules/
 
 # build outputs

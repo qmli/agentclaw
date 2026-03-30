@@ -5,7 +5,7 @@ import type {
   LLMProvider,
   TokenUsage,
   WsChatRequest,
-} from './types.js';
+} from './types.ts';
 
 /** 流式块回调 */
 export type OnChunk = (delta: string, model: string) => void;
