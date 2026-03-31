@@ -44,7 +44,9 @@
   border-radius: 6px;
   color: #aaa;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .new-chat-btn:hover {
@@ -132,7 +134,56 @@
   border-bottom: 1px solid #2a2a2a;
   font-size: 14px;
   color: #888;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-shrink: 0;
+}
+
+.conn-status-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.conn-status {
+  font-size: 12px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #3a3a3a;
+  color: #aaa;
+}
+
+.conn-status.open {
+  color: #34d399;
+  border-color: #1f6f5a;
+}
+
+.conn-status.connecting {
+  color: #fbbf24;
+  border-color: #6f5a1f;
+}
+
+.conn-status.closed,
+.conn-status.error {
+  color: #f87171;
+  border-color: #6f1f1f;
+}
+
+.reconnect-btn {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  color: #ddd;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.reconnect-btn:hover {
+  background: #343434;
 }
 
 /* ===== Messages ===== */
@@ -231,12 +282,24 @@
   animation: bounce 1.2s infinite;
 }
 
-.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-  30% { transform: translateY(-6px); opacity: 1; }
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
 }
 
 /* ===== Input area ===== */
@@ -291,7 +354,9 @@
   color: #555;
   cursor: not-allowed;
   flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .send-btn.active {
