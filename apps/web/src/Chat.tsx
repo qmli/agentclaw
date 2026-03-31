@@ -1,12 +1,21 @@
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
 import "./Chat.css";
 
+// 文件/图片附件
+interface FileAttachment {
+  name: string;
+  mimeType: string;
+  size: number;
+  data: string; // base64
+}
+
 // 单条消息模型：用于渲染气泡和时间。
 interface Message {
   id: number;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  attachments?: FileAttachment[]; // 文件附件
 }
 
 type ConnectionState = "connecting" | "open" | "closed" | "error";
@@ -88,11 +97,17 @@ export default function Chat() {
   // lastError: 最近一次连接或请求错误，用于页面提示。
   const [lastError, setLastError] = useState("");
 
+  // selectedFiles: 待上传的文件列表（未发送前的预览）。
+  const [selectedFiles, setSelectedFiles] = useState<FileAttachment[]>([]);
+
   // 消息列表底部锚点：每次消息变化后自动滚动到底。
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 文本域引用：用于根据内容动态调整输入框高度。
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 文件输入引用：用于触发文件选择。
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // WebSocket 连接对象。
   const wsRef = useRef<WebSocket | null>(null);
@@ -292,11 +307,56 @@ export default function Chat() {
     });
   }
 
+  // 处理文件选择
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const maxFileSize = 10 * 1024 * 1024; // 10MB
+    const newAttachments: FileAttachment[] = [];
+
+    for (const file of files) {
+      if (file.size > maxFileSize) {
+        setLastError(`文件 ${file.name} 超过 10MB 限制`);
+        continue;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        if (evt.target?.result) {
+          const base64 = (evt.target.result as string).split(",")[1] || "";
+          newAttachments.push({
+            name: file.name,
+            mimeType: file.type,
+            size: file.size,
+            data: base64,
+          });
+
+          if (newAttachments.length === files.length) {
+            setSelectedFiles((prev) => [...prev, ...newAttachments]);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 重置文件输入
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  // 移除待上传的文件
+  function removeFile(index: number) {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
   // 发送消息主流程：
   // 1) 校验输入；2) 追加用户消息；3) 模拟请求；4) 追加助手消息。
   async function sendMessage() {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text && selectedFiles.length === 0) return;
+    if (loading) return;
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       setLastError("服务端未连接，请稍后重试");
       return;
@@ -310,6 +370,7 @@ export default function Chat() {
       role: "user",
       content: text,
       timestamp: new Date(),
+      attachments: selectedFiles.length > 0 ? selectedFiles : undefined,
     };
     const assistantMsg: Message = {
       id: Date.now() + 1,
@@ -318,9 +379,24 @@ export default function Chat() {
       timestamp: new Date(),
     };
 
+    // 构造发送给服务端的历史消息
     const history = (activeConv?.messages ?? [])
       .filter((m) => m.content.trim().length > 0)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+        // 如果有附件，将其编码为消息内容的一部分
+        ...(m.attachments && m.attachments.length > 0
+          ? {
+              attachments: m.attachments.map((a) => ({
+                name: a.name,
+                mimeType: a.mimeType,
+                size: a.size,
+                data: a.data,
+              })),
+            }
+          : {}),
+      }));
 
     setConversations((prev) =>
       prev.map((c) =>
@@ -328,13 +404,17 @@ export default function Chat() {
           ? {
               ...c,
               // 第一轮用户输入可自动作为会话标题，便于在侧边栏识别。
-              title: c.messages.length <= 1 ? text.slice(0, 20) : c.title,
+              title:
+                c.messages.length <= 1
+                  ? (text || "发送了文件").slice(0, 20)
+                  : c.title,
               messages: [...c.messages, userMsg, assistantMsg],
             }
           : c,
       ),
     );
     setInput("");
+    setSelectedFiles([]);
     setLoading(true);
 
     const requestId =
@@ -492,7 +572,41 @@ export default function Chat() {
                     <span />
                   </div>
                 ) : (
-                  <div className="message-content">{msg.content}</div>
+                  <>
+                    {msg.content && (
+                      <div className="message-content">{msg.content}</div>
+                    )}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="message-attachments">
+                        {msg.attachments.map((file, idx) => {
+                          const isImage = file.mimeType.startsWith("image/");
+                          return (
+                            <div key={idx} className="attachment-item">
+                              {isImage ? (
+                                <img
+                                  src={`data:${file.mimeType};base64,${file.data}`}
+                                  alt={file.name}
+                                  className="attachment-image"
+                                />
+                              ) : (
+                                <div className="attachment-file">
+                                  <div className="attachment-icon">📎</div>
+                                  <div className="attachment-info">
+                                    <div className="attachment-name">
+                                      {file.name}
+                                    </div>
+                                    <div className="attachment-size">
+                                      {(file.size / 1024).toFixed(1)} KB
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="message-time">{formatTime(msg.timestamp)}</div>
               </div>
@@ -505,7 +619,60 @@ export default function Chat() {
 
         {/* 输入区：文本域 + 发送按钮 */}
         <div className="chat-input-area">
+          {/* 待上传文件预览 */}
+          {selectedFiles.length > 0 && (
+            <div className="pending-files">
+              {selectedFiles.map((file, idx) => {
+                const isImage = file.mimeType.startsWith("image/");
+                return (
+                  <div key={idx} className="pending-file-item">
+                    {isImage ? (
+                      <img
+                        src={`data:${file.mimeType};base64,${file.data}`}
+                        alt={file.name}
+                        className="pending-image"
+                      />
+                    ) : (
+                      <div className="pending-file-thumb">📎</div>
+                    )}
+                    <button
+                      className="remove-file-btn"
+                      onClick={() => removeFile(idx)}
+                      title="移除"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="chat-input-box">
+            <button
+              className="file-upload-btn"
+              onClick={() => fileInputRef.current?.click()}
+              title="上传文件或图片"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: "none" }}
+            />
             <textarea
               ref={textareaRef}
               className="chat-textarea"
@@ -516,9 +683,11 @@ export default function Chat() {
               rows={1}
             />
             <button
-              className={`send-btn ${input.trim() && !loading ? "active" : ""}`}
+              className={`send-btn ${(input.trim() || selectedFiles.length > 0) && !loading ? "active" : ""}`}
               onClick={sendMessage}
-              disabled={!input.trim() || loading}
+              disabled={
+                (!input.trim() && selectedFiles.length === 0) || loading
+              }
               title="发送"
             >
               <svg
