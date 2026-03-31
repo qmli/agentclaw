@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw Skills 架构图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: #58a6ff;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+
+  /* ─── TABS ─── */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+  .tab {
+    padding: 7px 18px;
+    border-radius: 20px;
+    border: 1px solid #30363d;
+    background: #161b22;
+    color: #8b949e;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all .2s;
+  }
+  .tab.active, .tab:hover {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #fff;
+  }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ─── CARD ─── */
+  .card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #58a6ff;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ─── FLOW DIAGRAM ─── */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: center;
+    width: 100%;
+  }
+  .flow-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .flow-arrow {
+    width: 2px;
+    height: 24px;
+    background: linear-gradient(to bottom, #30363d, #58a6ff);
+    margin: 0 auto;
+    position: relative;
+  }
+  .flow-arrow::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top: 8px solid #58a6ff;
+  }
+  .flow-arrow-label {
+    font-size: 11px;
+    color: #8b949e;
+    text-align: center;
+    margin: -8px 0 4px;
+  }
+
+  .node {
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+    border: 1px solid;
+    position: relative;
+    cursor: default;
+    transition: transform .15s, box-shadow .15s;
+    min-width: 160px;
+    text-align: center;
+  }
+  .node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,.4);
+  }
+  .node .node-title { font-weight: 600; margin-bottom: 4px; }
+  .node .node-sub { font-size: 11px; opacity: .75; line-height: 1.4; }
+
+  .node-blue   { background: #0d2340; border-color: #1f6feb; color: #79c0ff; }
+  .node-green  { background: #0a2319; border-color: #238636; color: #3fb950; }
+  .node-purple { background: #1a1035; border-color: #6e40c9; color: #bc8cff; }
+  .node-orange { background: #2b1700; border-color: #d29922; color: #e3b341; }
+  .node-red    { background: #2b1116; border-color: #da3633; color: #f85149; }
+  .node-teal   { background: #062a2e; border-color: #1b7c83; color: #39d353; }
+  .node-gray   { background: #161b22; border-color: #30363d; color: #8b949e; }
+
+  /* ─── SOURCES GRID ─── */
+  .sources-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .source-card {
+    border-radius: 8px;
+    padding: 10px 12px;
+    border-left: 3px solid;
+    background: #0d1117;
+  }
+  .source-card .src-title { font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+  .source-card .src-path { font-size: 11px; font-family: monospace; opacity: .7; }
+  .source-card .src-prio { font-size: 10px; margin-top: 4px; opacity: .6; }
+
+  .s-extra    { border-color: #6e40c9; }
+  .s-bundled  { border-color: #238636; }
+  .s-managed  { border-color: #1f6feb; }
+  .s-personal { border-color: #d29922; }
+  .s-project  { border-color: #1b7c83; }
+  .s-workspace{ border-color: #da3633; }
+
+  /* ─── PRIORITY BAR ─── */
+  .prio-bar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-top: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    height: 28px;
+  }
+  .prio-seg {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 0 4px;
+    color: #000;
+  }
+
+  /* ─── LLM FLOW ─── */
+  .llm-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .llm-step {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #1f6feb;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .step-body { flex: 1; }
+  .step-title { font-size: 13px; font-weight: 600; color: #e6edf3; margin-bottom: 3px; }
+  .step-detail { font-size: 12px; color: #8b949e; line-height: 1.5; }
+  .step-code {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #79c0ff;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+  .connector-line {
+    width: 1px;
+    background: #21262d;
+    margin-left: 13px;
+    height: 12px;
+  }
+
+  /* ─── SKILL FILE FORMAT ─── */
+  .yaml-block {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .y-key    { color: #79c0ff; }
+  .y-val    { color: #a5d6ff; }
+  .y-str    { color: #a8ff78; }
+  .y-comment{ color: #484f58; }
+  .y-head   { color: #ff7b72; }
+  .y-body   { color: #e6edf3; }
+
+  /* ─── FILTER PIPELINE ─── */
+  .filter-stages {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .filter-stage {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    text-align: center;
+    min-width: 120px;
+  }
+  .filter-stage .fs-title { font-weight: 600; color: #58a6ff; margin-bottom: 3px; font-size: 11px; }
+  .filter-stage .fs-sub { color: #8b949e; font-size: 10px; }
+  .filter-arrow {
+    width: 28px;
+    height: 2px;
+    background: #30363d;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .filter-arrow::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-left: 7px solid #30363d;
+  }
+
+  /* ─── LIMITS TABLE ─── */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: #161b22; color: #8b949e; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 1px solid #21262d; }
+  td { padding: 8px 12px; border-bottom: 1px solid #161b22; }
+  td:first-child { font-family: monospace; color: #79c0ff; }
+  td:last-child { color: #a8ff78; }
+  tr:hover td { background: #161b22; }
+
+  /* ─── COMMAND PATH ─── */
+  .cmd-path {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .cmd-branch {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .cmd-branch-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #21262d;
+  }
+  .cmd-branch-steps { display: flex; flex-direction: column; gap: 6px; }
+  .cmd-step { font-size: 11px; color: #8b949e; display: flex; gap: 6px; }
+  .cmd-step::before { content: '→'; color: #58a6ff; flex-shrink: 0; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 6px;
+  }
+  .badge-blue   { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb55; }
+  .badge-green  { background: #23863633; color: #3fb950; border: 1px solid #23863655; }
+  .badge-orange { background: #d2992233; color: #e3b341; border: 1px solid #d2992255; }
+</style>
+</head>
+<body>
+
+<h1>⚡ OpenClaw Skills 架构图</h1>
+<p class="subtitle">Skills 从文件系统加载 → 注入 System Prompt → LLM 按需读取执行</p>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('overview')">总览流程</div>
+  <div class="tab" onclick="switchTab('sources')">技能来源</div>
+  <div class="tab" onclick="switchTab('pipeline')">加载管线</div>
+  <div class="tab" onclick="switchTab('llm')">LLM 调用</div>
+  <div class="tab" onclick="switchTab('format')">文件格式</div>
+  <div class="tab" onclick="switchTab('limits')">限额配置</div>
+</div>
+
+<!-- ════════════════════ TAB: 总览 ════════════════════ -->
+<div id="tab-overview" class="panel active">
+
+  <div class="card">
+    <div class="card-title">🗺️ 端到端数据流</div>
+    <div class="flow">
+
+      <!-- Row 1: Sources -->
+      <div class="flow-row">
+        <div class="node node-gray" style="min-width:110px">
+          <div class="node-title">📦 Bundled</div>
+          <div class="node-sub">skills/ 内置包</div>
+        </div>
+        <div class="node node-gray" style="min-width:110px">
+          <div class="node-title">🔌 Plugin</div>
+          <div class="node-sub">extensions/*/skills</div>
+        </div>
+        <div class="node node-gray" style="min-width:110px">
+          <div class="node-title">🏠 Managed</div>
+          <div class="node-sub">~/.openclaw/skills</div>
+        </div>
+        <div class="node node-gray" style="min-width:110px">
+          <div class="node-title">👤 Personal</div>
+          <div class="node-sub">~/.agents/skills</div>
+        </div>
+        <div class="node node-gray" style="min-width:110px">
+          <div class="node-title">📂 Project</div>
+          <div class="node-sub">.agents/skills</div>
+        </div>
+        <div class="node node-gray" style="min-width:110px">
+          <div class="node-title">🏗️ Workspace</div>
+          <div class="node-sub">skills/ (最高优先)</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"></div>
+      <div class="flow-arrow-label">loadSkillEntries() — 按名称合并，后者覆盖同名</div>
+
+      <!-- Row 2: Load -->
+      <div class="flow-row">
+        <div class="node node-blue" style="min-width:300px">
+          <div class="node-title">🔄 loadSkillsFromDir (pi-coding-agent)</div>
+          <div class="node-sub">扫描 SKILL.md → 读取 frontmatter → 构造 Skill 对象<br>安全检查：realpath 确保路径不逃出根目录</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"></div>
+      <div class="flow-arrow-label">filterSkillEntries() — OS / env / bin / config 过滤</div>
+
+      <!-- Row 3: Filter -->
+      <div class="flow-row">
+        <div class="node node-purple" style="min-width:300px">
+          <div class="node-title">🔍 shouldIncludeSkill()</div>
+          <div class="node-sub">检查 enabled · allowBundled · OS 平台 · 环境变量 · 所需二进制工具</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"></div>
+      <div class="flow-arrow-label">buildWorkspaceSkillSnapshot() — 序列化为快照</div>
+
+      <!-- Row 4: Snapshot -->
+      <div class="flow-row">
+        <div class="node node-teal" style="min-width:300px">
+          <div class="node-title">📸 SkillSnapshot</div>
+          <div class="node-sub">prompt (格式化文本) · skills[] 摘要 · skillFilter · version</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"></div>
+      <div class="flow-arrow-label">buildSystemPrompt() — 嵌入 ## Skills 段落</div>
+
+      <!-- Row 5: System Prompt -->
+      <div class="flow-row">
+        <div class="node node-orange" style="min-width:300px">
+          <div class="node-title">📝 System Prompt</div>
+          <div class="node-sub">## Skills (mandatory) 段落<br>&lt;available_skills&gt; 列表 + 路径 + 描述</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"></div>
+      <div class="flow-arrow-label">发送给大模型</div>
+
+      <!-- Row 6: LLM -->
+      <div class="flow-row">
+        <div class="node node-green" style="min-width:200px">
+          <div class="node-title">🤖 大模型 (LLM)</div>
+          <div class="node-sub">扫描可用技能 → 选最合适的<br>→ 用 Read 工具读取 SKILL.md</div>
+        </div>
+        <div class="node node-red" style="min-width:200px">
+          <div class="node-title">⌨️ /斜杠命令</div>
+          <div class="node-sub">resolveSkillCommandInvocation()<br>→ dispatch:tool 或改写消息</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ TAB: 技能来源 ════════════════════ -->
+<div id="tab-sources" class="panel">
+  <div class="card">
+    <div class="card-title">📁 技能目录来源（优先级从低到高）</div>
+    <div class="sources-grid">
+      <div class="source-card s-extra">
+        <div class="src-title" style="color:#bc8cff">① Extra Dirs</div>
+        <div class="src-path">config.skills.load.extraDirs<br>+ extensions/*/skills</div>
+        <div class="src-prio">来源：配置文件 + 插件</div>
+      </div>
+      <div class="source-card s-bundled">
+        <div class="src-title" style="color:#3fb950">② Bundled</div>
+        <div class="src-path">skills/ (包根目录)<br>OPENCLAW_BUNDLED_SKILLS_DIR</div>
+        <div class="src-prio">来源：内置随包分发</div>
+      </div>
+      <div class="source-card s-managed">
+        <div class="src-title" style="color:#79c0ff">③ Managed</div>
+        <div class="src-path">~/.openclaw/skills</div>
+        <div class="src-prio">来源：openclaw skills install</div>
+      </div>
+      <div class="source-card s-personal">
+        <div class="src-title" style="color:#e3b341">④ Personal</div>
+        <div class="src-path">~/.agents/skills</div>
+        <div class="src-prio">来源：用户个人配置</div>
+      </div>
+      <div class="source-card s-project">
+        <div class="src-title" style="color:#39d353">⑤ Project</div>
+        <div class="src-path">&lt;workspace&gt;/.agents/skills</div>
+        <div class="src-prio">来源：项目级配置</div>
+      </div>
+      <div class="source-card s-workspace">
+        <div class="src-title" style="color:#f85149">⑥ Workspace ★最高</div>
+        <div class="src-path">&lt;workspace&gt;/skills</div>
+        <div class="src-prio">覆盖所有同名技能</div>
+      </div>
+    </div>
+    <div class="prio-bar">
+      <div class="prio-seg" style="background:#6e40c9">Extra</div>
+      <div class="prio-seg" style="background:#238636">Bundled</div>
+      <div class="prio-seg" style="background:#1f6feb">Managed</div>
+      <div class="prio-seg" style="background:#d29922">Personal</div>
+      <div class="prio-seg" style="background:#1b7c83">Project</div>
+      <div class="prio-seg" style="background:#da3633">Workspace ★</div>
+    </div>
+    <p style="font-size:11px;color:#8b949e;margin-top:8px;text-align:center">
+      同名技能：后加载的来源覆盖先加载的（Map.set 覆盖策略）
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🗂️ 目录结构规则</div>
+    <div class="yaml-block">
+<span class="y-comment"># 方式一：子目录式（多个技能）</span>
+<span class="y-body">skills/
+├── github/
+│   └── SKILL.md
+├── multi-search-engine/
+│   ├── SKILL.md
+│   ├── CHANGELOG.md
+│   └── references/
+│       ├── advanced-search.md
+│       └── international-search.md
+└── mintlify/
+    └── SKILL.md</span>
+
+<span class="y-comment"># 方式二：根目录即单个技能</span>
+<span class="y-body">my-skill/
+└── SKILL.md     <span class="y-comment"># 直接作为单技能目录加载</span></span>
+
+<span class="y-comment"># 自动检测：若存在 skills/*/SKILL.md，真正根设为 skills/</span>
+<span class="y-body">workspace/
+└── skills/          <span class="y-comment"># resolveNestedSkillsRoot() 识别此结构</span>
+    └── my-skill/
+        └── SKILL.md</span>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ TAB: 加载管线 ════════════════════ -->
+<div id="tab-pipeline" class="panel">
+  <div class="card">
+    <div class="card-title">⚙️ 加载与过滤管线</div>
+    <div class="filter-stages">
+      <div class="filter-stage">
+        <div class="fs-title">① 目录扫描</div>
+        <div class="fs-sub">listChildDirectories()<br>检测 SKILL.md 存在</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">② 文件大小检查</div>
+        <div class="fs-sub">maxSkillFileBytes<br>默认 256 KB</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">③ realpath 安全</div>
+        <div class="fs-sub">filterLoadedSkillsInsideRoot()<br>防止路径逃逸</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">④ 来源合并</div>
+        <div class="fs-sub">Map&lt;name, Skill&gt;<br>按优先级覆盖</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">⑤ frontmatter 解析</div>
+        <div class="fs-sub">parseFrontmatter()<br>resolveOpenClawMetadata()</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">⑥ 运行时过滤</div>
+        <div class="fs-sub">shouldIncludeSkill()<br>OS / env / bin</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">⑦ 调用策略过滤</div>
+        <div class="fs-sub">disableModelInvocation<br>userInvocable</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">⑧ 数量/字符限额</div>
+        <div class="fs-sub">applySkillsPromptLimits()<br>二分查找最大前缀</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">⑨ 路径压缩</div>
+        <div class="fs-sub">compactSkillPaths()<br>home → ~/ (省 token)</div>
+      </div>
+      <div class="filter-arrow"></div>
+      <div class="filter-stage">
+        <div class="fs-title">⑩ 格式化文本</div>
+        <div class="fs-sub">formatSkillsForPrompt()<br>生成 prompt 字符串</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔍 shouldIncludeSkill() 判断逻辑</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:12px;color:#3fb950;font-weight:600;margin-bottom:8px">✅ 通过条件</div>
+        <div style="font-size:12px;color:#8b949e;line-height:2">
+          • <code style="color:#79c0ff">enabled !== false</code> (config)<br>
+          • isBundledSkillAllowed (allowBundled 白名单)<br>
+          • OS 平台匹配 (metadata.os)<br>
+          • 所需环境变量存在 (requires.env)<br>
+          • 所需二进制工具可用 (requires.bins)<br>
+          • 所需配置路径有效 (requires.config)<br>
+          • <code style="color:#79c0ff">always: true</code> 则跳过环境检查
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#f85149;font-weight:600;margin-bottom:8px">❌ 排除条件</div>
+        <div style="font-size:12px;color:#8b949e;line-height:2">
+          • <code style="color:#79c0ff">enabled: false</code> (显式禁用)<br>
+          • 不在 allowBundled 白名单<br>
+          • OS 不匹配<br>
+          • 缺少必需环境变量<br>
+          • 缺少必需二进制工具<br>
+          • 文件超过 maxSkillFileBytes<br>
+          • 路径逃出配置的根目录
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ TAB: LLM 调用 ════════════════════ -->
+<div id="tab-llm" class="panel">
+
+  <div class="card">
+    <div class="card-title">🤖 模型侧调用流程（Prompt 驱动路径）</div>
+    <div class="llm-flow">
+
+      <div class="llm-step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">会话开始 — 构建 SkillSnapshot</div>
+          <div class="step-detail">ensureSkillSnapshot() 在首回合或版本刷新时调用，将技能快照写入 sessionEntry.skillsSnapshot</div>
+          <div class="step-code">// session-updates.ts
+ensureSkillSnapshot(session, workspaceDir, config)
+  → buildWorkspaceSkillSnapshot(workspaceDir, opts)
+  → { prompt, skills[], version }</div>
+        </div>
+      </div>
+
+      <div class="connector-line"></div>
+
+      <div class="llm-step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">构建 System Prompt — 注入 Skills 段落</div>
+          <div class="step-detail">resolveSkillsPromptForRun() 从快照取 prompt，buildSystemPrompt() 将其嵌入 ## Skills (mandatory) 段落</div>
+          <div class="step-code">// system-prompt.ts → buildSkillsSection()
+"## Skills (mandatory)"
+"Before replying: scan &lt;available_skills&gt; &lt;description&gt; entries."
+"- If exactly one skill clearly applies: read its SKILL.md at &lt;location&gt; with `read`, then follow it."
+"- If multiple could apply: choose the most specific one, then read/follow it."
+"- If none clearly apply: do not read any SKILL.md."
+"Constraints: never read more than one skill up front; only read after selecting."
+// ... + skillsPrompt (available_skills 列表)</div>
+        </div>
+      </div>
+
+      <div class="connector-line"></div>
+
+      <div class="llm-step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">模型收到对话 — 扫描 available_skills</div>
+          <div class="step-detail">模型读取 system prompt 中的 &lt;available_skills&gt; 块，扫描每个技能的 name、description、location 字段</div>
+          <div class="step-code">&lt;available_skills&gt;
+  &lt;skill name="multi-search-engine"
+         description="17 search engines for web crawling..."
+         location="~/skills/multi-search-engine/SKILL.md" /&gt;
+  &lt;skill name="github" ... /&gt;
+  ...
+&lt;/available_skills&gt;</div>
+        </div>
+      </div>
+
+      <div class="connector-line"></div>
+
+      <div class="llm-step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">选择技能 — 调用 Read 工具读取 SKILL.md</div>
+          <div class="step-detail">模型决定使用某个技能后，用 Read 工具（文件工具）读取对应的 SKILL.md 文件内容</div>
+          <div class="step-code">// 模型发出 tool call
+read({ path: "~/skills/multi-search-engine/SKILL.md" })
+// → 返回 SKILL.md 全文内容</div>
+        </div>
+      </div>
+
+      <div class="connector-line"></div>
+
+      <div class="llm-step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <div class="step-title">执行技能指令</div>
+          <div class="step-detail">模型按 SKILL.md 中的指南执行任务（如调用 web_fetch 搜索、调用 GitHub API 等）</div>
+          <div class="step-code">// 按 SKILL.md 内容执行，例如 multi-search-engine：
+web_fetch({ url: "https://www.google.com/search?q=python+tutorial" })</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">⌨️ 斜杠命令调用路径（/命令名）</div>
+    <div class="cmd-path">
+      <div class="cmd-branch">
+        <div class="cmd-branch-title" style="color:#3fb950">路径 A：dispatch → Tool 直接派发</div>
+        <div class="cmd-branch-steps">
+          <div class="cmd-step">用户输入 <code>/search python</code></div>
+          <div class="cmd-step">resolveSkillCommandInvocation() 匹配技能名</div>
+          <div class="cmd-step">读取 frontmatter 中 command-dispatch: tool</div>
+          <div class="cmd-step">找到 toolName 对应的 AnyAgentTool</div>
+          <div class="cmd-step">tool.execute(args) 直接调用，绕过 LLM</div>
+        </div>
+        <div class="step-code" style="margin-top:10px">// SKILL.md frontmatter
+command-dispatch: tool
+command-tool: web_search
+command-arg-mode: raw</div>
+      </div>
+      <div class="cmd-branch">
+        <div class="cmd-branch-title" style="color:#58a6ff">路径 B：改写消息 → 走 Agent 流程</div>
+        <div class="cmd-branch-steps">
+          <div class="cmd-step">用户输入 <code>/github create issue</code></div>
+          <div class="cmd-step">resolveSkillCommandInvocation() 匹配技能名</div>
+          <div class="cmd-step">无 dispatch 配置</div>
+          <div class="cmd-step">消息体改写为「请使用 github skill...」</div>
+          <div class="cmd-step">进入正常 agent 对话，模型自行读取 SKILL.md</div>
+        </div>
+        <div class="step-code" style="margin-top:10px">// SKILL.md frontmatter
+user-invocable: true
+// 无 command-dispatch</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ TAB: 文件格式 ════════════════════ -->
+<div id="tab-format" class="panel">
+  <div class="card">
+    <div class="card-title">📄 SKILL.md 文件结构</div>
+    <div class="yaml-block">
+<span class="y-head">---</span>
+<span class="y-key">name</span>: <span class="y-str">my-skill</span>                       <span class="y-comment"># 技能唯一名称（必须）</span>
+<span class="y-key">description</span>: <span class="y-str">用一句话描述技能功能</span>       <span class="y-comment"># 出现在 available_skills 列表（必须）</span>
+<span class="y-key">user-invocable</span>: <span class="y-val">true</span>                  <span class="y-comment"># 是否可用 /命令名 调用（默认 true）</span>
+<span class="y-key">disable-model-invocation</span>: <span class="y-val">false</span>        <span class="y-comment"># 禁止模型主动调用此技能（默认 false）</span>
+<span class="y-key">command-dispatch</span>: <span class="y-str">tool</span>                <span class="y-comment"># 斜杠命令直接派发到 tool（可选）</span>
+<span class="y-key">command-tool</span>: <span class="y-str">web_search</span>              <span class="y-comment"># 目标 tool 名称</span>
+<span class="y-key">command-arg-mode</span>: <span class="y-str">raw</span>                 <span class="y-comment"># 参数传递模式</span>
+<span class="y-key">metadata</span>:
+  <span class="y-key">openclaw</span>:
+    <span class="y-key">always</span>: <span class="y-val">false</span>                      <span class="y-comment"># true = 始终包含，跳过环境检查</span>
+    <span class="y-key">skillKey</span>: <span class="y-str">my-skill-key</span>             <span class="y-comment"># 配置文件中的 key（默认等于 name）</span>
+    <span class="y-key">primaryEnv</span>: <span class="y-str">MY_API_KEY</span>             <span class="y-comment"># 主要环境变量（apiKey 配置时自动注入）</span>
+    <span class="y-key">emoji</span>: <span class="y-str">"🔍"</span>
+    <span class="y-key">homepage</span>: <span class="y-str">https://example.com</span>
+    <span class="y-key">os</span>: [<span class="y-str">darwin</span>, <span class="y-str">linux</span>]                <span class="y-comment"># 仅在特定 OS 上启用</span>
+    <span class="y-key">requires</span>:
+      <span class="y-key">bins</span>: [<span class="y-str">ffmpeg</span>]                    <span class="y-comment"># 必须存在的可执行文件</span>
+      <span class="y-key">anyBins</span>: [<span class="y-str">brew</span>, <span class="y-str">apt</span>]              <span class="y-comment"># 任一存在即可</span>
+      <span class="y-key">env</span>: [<span class="y-str">MY_API_KEY</span>]                 <span class="y-comment"># 必须存在的环境变量</span>
+      <span class="y-key">config</span>: [<span class="y-str">browser.enabled</span>]         <span class="y-comment"># 必须为 truthy 的配置路径</span>
+      <span class="y-key">tools</span>: [<span class="y-str">web_fetch</span>]               <span class="y-comment"># 依赖的 agent 工具</span>
+    <span class="y-key">install</span>:
+      - <span class="y-key">kind</span>: <span class="y-str">brew</span>
+        <span class="y-key">formula</span>: <span class="y-str">ffmpeg</span>
+      - <span class="y-key">kind</span>: <span class="y-str">node</span>
+        <span class="y-key">package</span>: <span class="y-str">@my/tool</span>
+<span class="y-head">---</span>
+
+<span class="y-comment"># 技能正文（Markdown 格式，模型执行时读取）</span>
+<span class="y-body">
+## 使用场景
+
+当用户需要 ... 时，使用本技能。
+
+## 操作步骤
+
+1. 首先检查 ...
+2. 然后调用 web_fetch({url: "..."})
+3. 处理返回结果 ...
+
+## 注意事项
+
+- 注意 rate limit：...
+</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔧 安装规范（install 字段）</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;text-align:center">
+        <div style="color:#e3b341;font-weight:600;font-size:12px">brew</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:4px">formula:<br>package-name</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;text-align:center">
+        <div style="color:#3fb950;font-weight:600;font-size:12px">node</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:4px">package:<br>@scope/pkg</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;text-align:center">
+        <div style="color:#58a6ff;font-weight:600;font-size:12px">go</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:4px">module:<br>github.com/x/y</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;text-align:center">
+        <div style="color:#bc8cff;font-weight:600;font-size:12px">uv</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:4px">package:<br>python-pkg</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;text-align:center">
+        <div style="color:#f85149;font-weight:600;font-size:12px">download</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:4px">url:<br>https://...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ TAB: 限额配置 ════════════════════ -->
+<div id="tab-limits" class="panel">
+  <div class="card">
+    <div class="card-title">⚖️ 默认限额参数</div>
+    <table>
+      <tr><th>配置路径</th><th>默认值</th><th>说明</th></tr>
+      <tr><td>skills.limits.maxCandidatesPerRoot</td><td>300</td><td>每个来源目录最多扫描的子目录数</td></tr>
+      <tr><td>skills.limits.maxSkillsLoadedPerSource</td><td>200</td><td>每个来源最多加载的技能数</td></tr>
+      <tr><td>skills.limits.maxSkillsInPrompt</td><td>150</td><td>注入 system prompt 的最大技能数</td></tr>
+      <tr><td>skills.limits.maxSkillsPromptChars</td><td>30,000</td><td>skills 段落最大字符数（超限二分截断）</td></tr>
+      <tr><td>skills.limits.maxSkillFileBytes</td><td>256,000</td><td>单个 SKILL.md 最大字节数</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-title">⚙️ 配置文件结构（openclaw.json）</div>
+    <div class="yaml-block">
+<span class="y-head">{</span>
+  <span class="y-key">"skills"</span>: {
+    <span class="y-key">"allowBundled"</span>: [<span class="y-str">"github"</span>, <span class="y-str">"multi-search-engine"</span>],  <span class="y-comment">// 内置技能白名单</span>
+    <span class="y-key">"load"</span>: {
+      <span class="y-key">"extraDirs"</span>: [<span class="y-str">"/path/to/my/skills"</span>]          <span class="y-comment">// 额外技能目录</span>
+    },
+    <span class="y-key">"limits"</span>: {
+      <span class="y-key">"maxSkillsInPrompt"</span>: <span class="y-val">50</span>,
+      <span class="y-key">"maxSkillFileBytes"</span>: <span class="y-val">100000</span>
+    },
+    <span class="y-key">"entries"</span>: {
+      <span class="y-key">"my-skill"</span>: {
+        <span class="y-key">"enabled"</span>: <span class="y-val">true</span>,
+        <span class="y-key">"apiKey"</span>: <span class="y-str">"sk-..."</span>,             <span class="y-comment">// 注入到 primaryEnv</span>
+        <span class="y-key">"env"</span>: {
+          <span class="y-key">"MY_EXTRA_VAR"</span>: <span class="y-str">"value"</span>
+        }
+      }
+    }
+  }
+<span class="y-head">}</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔄 快照版本刷新机制</div>
+    <div class="llm-flow">
+      <div class="llm-step">
+        <div class="step-num" style="background:#d29922">1</div>
+        <div class="step-body">
+          <div class="step-title">refresh.ts — 监听 SKILL.md 变化</div>
+          <div class="step-detail">文件系统 watcher 监听 skills 目录下的 SKILL.md 文件，变化时递增 snapshotVersion</div>
+        </div>
+      </div>
+      <div class="connector-line"></div>
+      <div class="llm-step">
+        <div class="step-num" style="background:#d29922">2</div>
+        <div class="step-body">
+          <div class="step-title">ensureSkillSnapshot() — 版本比对</div>
+          <div class="step-detail">每次 agent 回合开始时，比对 session.skillsSnapshot.version 与当前版本号，不一致则重建快照</div>
+        </div>
+      </div>
+      <div class="connector-line"></div>
+      <div class="llm-step">
+        <div class="step-num" style="background:#d29922">3</div>
+        <div class="step-body">
+          <div class="step-title">serialize.ts — 串行化锁</div>
+          <div class="step-detail">serializeByKey() 确保同一 workspaceDir 的技能构建不并发执行，防止竞态条件</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+</script>
+</body>
+</html>
