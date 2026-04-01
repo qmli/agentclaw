@@ -1,17 +1,21 @@
-import { WebSocketServer, WebSocket } from 'ws';
-import type { IncomingMessage } from 'http';
-import { chatCompletion } from './openai-http.js';
+import { WebSocketServer, WebSocket } from "ws";
+import type { IncomingMessage } from "http";
+import { chatCompletion } from "./openai-http.js";
 import type {
   GatewayConfig,
   WsClientMessage,
   WsServerMessage,
   WsChatRequest,
-} from './types.js';
+} from "./types.js";
+import { ensureSkillSnapshot } from "../agents/skills/index.js";
+import type { SkillSnapshot } from "../agents/skills/index.js";
 
 /** 每个连接维护的上下文 */
 interface ConnectionContext {
   /** 正在运行的请求：requestId → AbortController */
   pending: Map<string, AbortController>;
+  /** 当前技能快照（按版本缓存，避免每次重建） */
+  skillSnapshot?: SkillSnapshot;
 }
 
 /** 向客户端安全发送 JSON 消息 */
@@ -27,7 +31,7 @@ function isOriginAllowed(
   allowedOrigins: string[],
 ): boolean {
   if (allowedOrigins.length === 0) return true;
-  const origin = req.headers.origin ?? '';
+  const origin = req.headers.origin ?? "";
   return allowedOrigins.includes(origin);
 }
 
@@ -40,17 +44,39 @@ async function handleChat(
 ): Promise<void> {
   const { id } = request;
 
-  const ac = await chatCompletion(request, config, {
+  // 注入 skills prompt：将快照内容作为首条 system 消息
+  let messages = request.messages;
+  if (config.workspaceDir) {
+    try {
+      ctx.skillSnapshot = await ensureSkillSnapshot(
+        config.workspaceDir,
+        ctx.skillSnapshot,
+      );
+      if (ctx.skillSnapshot.prompt) {
+        messages = [
+          { role: "system", content: ctx.skillSnapshot.prompt },
+          ...messages,
+        ];
+      }
+    } catch (err) {
+      console.warn(
+        "[gateway] skills snapshot build failed, skipping injection:",
+        err,
+      );
+    }
+  }
+
+  const ac = await chatCompletion({ ...request, messages }, config, {
     onChunk(delta, model) {
-      send(ws, { type: 'chunk', id, delta, ...(model ? { model } : {}) });
+      send(ws, { type: "chunk", id, delta, ...(model ? { model } : {}) });
     },
     onDone(usage) {
       ctx.pending.delete(id);
-      send(ws, { type: 'done', id, usage });
+      send(ws, { type: "done", id, usage });
     },
     onError(code, message) {
       ctx.pending.delete(id);
-      send(ws, { type: 'error', id, code, message });
+      send(ws, { type: "error", id, code, message });
     },
   });
 
@@ -70,22 +96,22 @@ function handleMessage(
     msg = JSON.parse(raw) as WsClientMessage;
   } catch {
     send(ws, {
-      type: 'error',
-      id: '',
-      code: 'PARSE_ERROR',
-      message: 'Invalid JSON message',
+      type: "error",
+      id: "",
+      code: "PARSE_ERROR",
+      message: "Invalid JSON message",
     });
     return;
   }
 
   switch (msg.type) {
-    case 'chat':
+    case "chat":
       handleChat(ws, ctx, msg, config).catch(() => {
         // handleChat 内部已处理错误，此处忽略
       });
       break;
 
-    case 'cancel': {
+    case "cancel": {
       const ac = ctx.pending.get(msg.id);
       if (ac) {
         ac.abort();
@@ -96,9 +122,9 @@ function handleMessage(
 
     default:
       send(ws, {
-        type: 'error',
-        id: '',
-        code: 'UNKNOWN_MESSAGE_TYPE',
+        type: "error",
+        id: "",
+        code: "UNKNOWN_MESSAGE_TYPE",
         message: `Unknown message type`,
       });
   }
@@ -108,55 +134,59 @@ function handleMessage(
 export function createGateway(config: GatewayConfig): WebSocketServer {
   const wss = new WebSocketServer({ port: config.port });
 
-  wss.on('listening', () => {
-    console.log(`[gateway] WebSocket server listening on ws://localhost:${config.port}`);
+  wss.on("listening", () => {
+    console.log(
+      `[gateway] WebSocket server listening on ws://localhost:${config.port}`,
+    );
   });
 
-  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+  wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
     // 来源校验
     if (!isOriginAllowed(req, config.allowedOrigins)) {
-      ws.close(1008, 'Origin not allowed');
+      ws.close(1008, "Origin not allowed");
       return;
     }
 
     const ctx: ConnectionContext = { pending: new Map() };
     console.log(`[gateway] Client connected  ip=${req.socket.remoteAddress}`);
 
-    ws.on('message', (data) => {
+    ws.on("message", (data) => {
       handleMessage(ws, ctx, data.toString(), config);
     });
 
-    ws.on('ping', () => {
+    ws.on("ping", () => {
       ws.pong();
     });
 
     // 客户端主动心跳 (type: ping 文本消息)
-    ws.on('message', (data) => {
+    ws.on("message", (data) => {
       try {
         const parsed = JSON.parse(data.toString()) as { type: string };
-        if (parsed.type === 'ping') {
-          send(ws, { type: 'pong', ts: Date.now() });
+        if (parsed.type === "ping") {
+          send(ws, { type: "pong", ts: Date.now() });
         }
       } catch {
         // 已在上方统一处理，忽略
       }
     });
 
-    ws.on('close', () => {
+    ws.on("close", () => {
       // 连接关闭时取消所有挂起请求
       for (const ac of ctx.pending.values()) {
         ac.abort();
       }
       ctx.pending.clear();
-      console.log(`[gateway] Client disconnected ip=${req.socket.remoteAddress}`);
+      console.log(
+        `[gateway] Client disconnected ip=${req.socket.remoteAddress}`,
+      );
     });
 
-    ws.on('error', (err) => {
+    ws.on("error", (err) => {
       console.error(`[gateway] Connection error: ${err.message}`);
     });
   });
 
-  wss.on('error', (err) => {
+  wss.on("error", (err) => {
     console.error(`[gateway] Server error: ${err.message}`);
   });
 

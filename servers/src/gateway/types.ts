@@ -1,10 +1,10 @@
 // ====== 消息协议类型 ======
 
 /** 支持的 LLM 提供方 */
-export type LLMProvider = 'openai' | 'deepseek' | 'custom';
+export type LLMProvider = "openai" | "deepseek" | "custom";
 
 /** 聊天角色 */
-export type ChatRole = 'system' | 'user' | 'assistant' | 'tool';
+export type ChatRole = "system" | "user" | "assistant" | "tool";
 
 /** 单条聊天消息 */
 export interface ChatMessage {
@@ -24,7 +24,7 @@ export interface TokenUsage {
 
 /** 发起聊天请求 */
 export interface WsChatRequest {
-  type: 'chat';
+  type: "chat";
   /** 请求唯一 ID，用于关联响应 */
   id: string;
   messages: ChatMessage[];
@@ -42,7 +42,7 @@ export interface WsChatRequest {
 
 /** 取消正在进行的请求 */
 export interface WsCancelRequest {
-  type: 'cancel';
+  type: "cancel";
   id: string;
 }
 
@@ -52,7 +52,7 @@ export type WsClientMessage = WsChatRequest | WsCancelRequest;
 
 /** 流式文本块 */
 export interface WsChunkMessage {
-  type: 'chunk';
+  type: "chunk";
   id: string;
   delta: string;
   /** 模型名（首包携带） */
@@ -61,14 +61,14 @@ export interface WsChunkMessage {
 
 /** 请求完成 */
 export interface WsDoneMessage {
-  type: 'done';
+  type: "done";
   id: string;
   usage?: TokenUsage;
 }
 
 /** 错误 */
 export interface WsErrorMessage {
-  type: 'error';
+  type: "error";
   id: string;
   code: string;
   message: string;
@@ -76,7 +76,7 @@ export interface WsErrorMessage {
 
 /** 心跳响应 */
 export interface WsPongMessage {
-  type: 'pong';
+  type: "pong";
   ts: number;
 }
 
@@ -109,4 +109,6 @@ export interface GatewayConfig {
   };
   /** 默认使用的提供方 */
   defaultProvider: LLMProvider;
+  /** 工作区目录，用于加载 skills；未设置时跳过 skills 注入 */
+  workspaceDir?: string;
 }
