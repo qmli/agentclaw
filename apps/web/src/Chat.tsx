@@ -66,7 +66,7 @@ interface Conversation {
 const WELCOME_MESSAGE: Message = {
   id: 0,
   role: "assistant",
-  content: "你好！我是其明打造的 AgentClaw，有什么可以帮你的吗？",
+  content: "你好！我是李其明打造的 AgentClaw，有什么可以帮你的吗？",
   timestamp: new Date(),
 };
 
@@ -136,6 +136,11 @@ export default function Chat() {
       reconnectTimerRef.current = null;
     }
     if (wsRef.current) {
+      // 解绑旧连接事件，避免 close 触发 onclose 里的自动重连风暴
+      wsRef.current.onopen = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onclose = null;
       wsRef.current.close();
       wsRef.current = null;
     }
@@ -149,84 +154,93 @@ export default function Chat() {
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) return; // 忽略旧连接事件
       setConnection("open");
       setLastError("");
     };
 
     ws.onmessage = (event: MessageEvent<string>) => {
-      let msg: WsServerMessage;
+      if (wsRef.current !== ws) return; // 忽略旧连接事件
       try {
-        msg = JSON.parse(event.data) as WsServerMessage;
+        const msg = JSON.parse(event.data) as WsServerMessage;
+
+        switch (msg.type) {
+          case "chunk": {
+            const pending = pendingRef.current.get(msg.id);
+            if (!pending) return;
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === pending.conversationId
+                  ? {
+                      ...c,
+                      messages: c.messages.map((m) =>
+                        m.id === pending.assistantMessageId
+                          ? { ...m, content: m.content + msg.delta }
+                          : m,
+                      ),
+                    }
+                  : c,
+              ),
+            );
+            return;
+          }
+
+          case "done": {
+            pendingRef.current.delete(msg.id);
+            if (activeRequestIdRef.current === msg.id) {
+              activeRequestIdRef.current = null;
+              setLoading(false);
+            }
+            return;
+          }
+
+          case "error": {
+            const pending = pendingRef.current.get(msg.id);
+            pendingRef.current.delete(msg.id);
+            if (pending) {
+              setConversations((prev) =>
+                prev.map((c) =>
+                  c.id === pending.conversationId
+                    ? {
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.id === pending.assistantMessageId
+                            ? {
+                                ...m,
+                                content: `请求失败：${msg.code} - ${msg.message}`,
+                              }
+                            : m,
+                        ),
+                      }
+                    : c,
+                ),
+              );
+            }
+            if (activeRequestIdRef.current === msg.id) {
+              activeRequestIdRef.current = null;
+              setLoading(false);
+            }
+            setLastError(`${msg.code}: ${msg.message}`);
+            return;
+          }
+
+          case "pong":
+          default:
+            return;
+        }
       } catch {
         return;
-      }
-
-      if (msg.type === "chunk") {
-        const pending = pendingRef.current.get(msg.id);
-        if (!pending) return;
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === pending.conversationId
-              ? {
-                  ...c,
-                  messages: c.messages.map((m) =>
-                    m.id === pending.assistantMessageId
-                      ? { ...m, content: m.content + msg.delta }
-                      : m,
-                  ),
-                }
-              : c,
-          ),
-        );
-        return;
-      }
-
-      if (msg.type === "done") {
-        pendingRef.current.delete(msg.id);
-        if (activeRequestIdRef.current === msg.id) {
-          activeRequestIdRef.current = null;
-          setLoading(false);
-        }
-        return;
-      }
-
-      if (msg.type === "error") {
-        const pending = pendingRef.current.get(msg.id);
-        debugger;
-        pendingRef.current.delete(msg.id);
-        if (pending) {
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === pending.conversationId
-                ? {
-                    ...c,
-                    messages: c.messages.map((m) =>
-                      m.id === pending.assistantMessageId
-                        ? {
-                            ...m,
-                            content: `请求失败：${msg.code} - ${msg.message}`,
-                          }
-                        : m,
-                    ),
-                  }
-                : c,
-            ),
-          );
-        }
-        if (activeRequestIdRef.current === msg.id) {
-          activeRequestIdRef.current = null;
-          setLoading(false);
-        }
-        setLastError(`${msg.code}: ${msg.message}`);
       }
     };
 
     ws.onerror = () => {
+      if (wsRef.current !== ws) return; // 忽略旧连接事件
       setConnection("error");
       setLastError("WebSocket 连接异常");
     };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return; // 忽略旧连接事件
       setConnection("closed");
       if (activeRequestIdRef.current) {
         activeRequestIdRef.current = null;

@@ -45,6 +45,14 @@ export interface SkillInstallSpec {
 
 // ====== OpenClaw 专属元数据 ======
 
+/** 技能调用示例（文档 + 工具调用示范两用） */
+export interface SkillExample {
+  /** 示例描述 / 问题 */
+  query: string;
+  /** 对应的工具调用代码片段 */
+  code?: string;
+}
+
 export interface OpenClawSkillMetadata {
   /** true = 始终包含，跳过 OS / env / bin 检查 */
   always?: boolean;
@@ -65,12 +73,16 @@ export interface OpenClawSkillMetadata {
     env?: string[];
     /** 必须为 truthy 的配置路径（dot notation） */
     config?: string[];
-    /** 依赖的 agent 工具（声明用，不做运行时检查） */
+    /**
+     * 依赖的 agent / gateway 工具名列表（如 "web_fetch"）。
+     * 若 availableTools 被传入，则过滤时要求这些工具全部可用；
+     * 否则仅做声明用途。
+     */
     tools?: string[];
   };
   install?: SkillInstallSpec[];
-  /** 调用示例（文档用） */
-  examples?: string[];
+  /** 调用示例（文档 + prompt few-shot 两用） */
+  examples?: Array<SkillExample | string>;
 }
 
 // ====== Frontmatter ======
@@ -139,7 +151,14 @@ export interface SkillSnapshot {
     name: string;
     primaryEnv?: string;
     requiredEnv?: string[];
+    /** 该技能声明依赖的 gateway 工具（来自 metadata.openclaw.requires.tools） */
+    requiredTools?: string[];
   }>;
+  /**
+   * 所有已加载技能所需工具的去重并集。
+   * gateway 用此字段动态组装传给 LLM 的 tools 数组。
+   */
+  toolNames: string[];
   /** agent 级别的技能白名单过滤 */
   skillFilter?: string[];
   /** 完整 Skill 对象列表（含被 disableModelInvocation 排除的） */

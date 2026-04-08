@@ -1,6 +1,23 @@
 import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
 import { createGateway } from './src/gateway/ws-server.js';
 import type { GatewayConfig, LLMProvider } from './src/gateway/types.js';
+
+function resolveWorkspaceDir(): string {
+  const fromEnv = process.env.WORKSPACE_DIR?.trim();
+  if (fromEnv) return fromEnv;
+
+  const cwd = process.cwd();
+  const cwdHasSkills = fs.existsSync(path.join(cwd, 'skills'));
+  if (cwdHasSkills) return cwd;
+
+  const parent = path.resolve(cwd, '..');
+  const parentHasSkills = fs.existsSync(path.join(parent, 'skills'));
+  if (parentHasSkills) return parent;
+
+  return cwd;
+}
 
 /** 从环境变量读取配置，未设置时使用默认值 */
 const config: GatewayConfig = {
@@ -10,6 +27,7 @@ const config: GatewayConfig = {
     : [], // 空数组 = 允许所有
 
   defaultProvider: (process.env.DEFAULT_PROVIDER as LLMProvider) ?? 'deepseek',
+  workspaceDir: resolveWorkspaceDir(),
 
   providers: {
     openai: process.env.OPENAI_API_KEY

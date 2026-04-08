@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "http";
 import { chatCompletion } from "./openai-http.js";
+import { BUILT_IN_TOOL_NAMES } from "./tool-executor.js";
 import type {
   GatewayConfig,
   WsClientMessage,
@@ -51,6 +52,7 @@ async function handleChat(
       ctx.skillSnapshot = await ensureSkillSnapshot(
         config.workspaceDir,
         ctx.skillSnapshot,
+        { availableTools: [...BUILT_IN_TOOL_NAMES] },
       );
       if (ctx.skillSnapshot.prompt) {
         messages = [
@@ -66,19 +68,25 @@ async function handleChat(
     }
   }
 
-  const ac = await chatCompletion({ ...request, messages }, config, {
-    onChunk(delta, model) {
-      send(ws, { type: "chunk", id, delta, ...(model ? { model } : {}) });
+  const ac = await chatCompletion(
+    { ...request, messages },
+    config,
+    {
+      onChunk(delta, model) {
+        send(ws, { type: "chunk", id, delta, ...(model ? { model } : {}) });
+      },
+      onDone(usage) {
+        ctx.pending.delete(id);
+        send(ws, { type: "done", id, usage });
+      },
+      onError(code, message) {
+        ctx.pending.delete(id);
+        send(ws, { type: "error", id, code, message });
+      },
     },
-    onDone(usage) {
-      ctx.pending.delete(id);
-      send(ws, { type: "done", id, usage });
-    },
-    onError(code, message) {
-      ctx.pending.delete(id);
-      send(ws, { type: "error", id, code, message });
-    },
-  });
+    // 按快照中声明的工具需求动态开启对应 LLM function tools
+    { toolNames: ctx.skillSnapshot?.toolNames },
+  );
 
   // 将 AbortController 注册到连接上下文，以支持 cancel 消息
   ctx.pending.set(id, ac);

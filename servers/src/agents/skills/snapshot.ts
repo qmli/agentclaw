@@ -38,6 +38,12 @@ const buildLocks = new Map<string, Promise<SkillSnapshot>>();
 export interface BuildSnapshotOptions extends LoadSkillsOptions {
   /** agent 级别的技能白名单（仅包含列表中的技能） */
   skillFilter?: string[];
+  /**
+   * 当前 gateway/runtime 提供的工具名列表（如 ["web_fetch"]）。
+   * 若提供，则过滤器会剔除依赖不可用工具的技能；
+   * 同时写入快照，让调用方据此动态组装 LLM tools 数组。
+   */
+  availableTools?: string[];
 }
 
 // ====== 核心构建函数 ======
@@ -63,8 +69,10 @@ export async function buildWorkspaceSkillSnapshot(
   // 1. 加载所有来源的技能条目
   const allEntries = loadSkillEntries({ ...options, workspaceDir });
 
-  // 2. 过滤：资格判定（OS / bins / env / config）
-  const eligible = filterSkillEntries(allEntries, config);
+  // 2. 过滤：资格判定（OS / bins / env / config / tools 可用性）
+  const eligible = filterSkillEntries(allEntries, config, {
+    availableTools: options.availableTools,
+  });
 
   // 3. agent 级别的技能白名单过滤（可选）
   const filtered = options.skillFilter
@@ -79,13 +87,20 @@ export async function buildWorkspaceSkillSnapshot(
   // 5. 构建 prompt 文本
   const prompt = buildWorkspaceSkillsPrompt(promptEntries, limits);
 
+  // 收集所有加载技能所需工具的去重并集
+  const toolNames = [
+    ...new Set(filtered.flatMap((e) => e.metadata?.requires?.tools ?? [])),
+  ];
+
   return {
     prompt,
     skills: filtered.map((e) => ({
       name: e.skill.name,
       primaryEnv: e.metadata?.primaryEnv,
       requiredEnv: e.metadata?.requires?.env,
+      requiredTools: e.metadata?.requires?.tools,
     })),
+    toolNames,
     skillFilter: options.skillFilter,
     resolvedSkills: filtered.map((e) => e.skill),
     version: currentVersion,

@@ -37,6 +37,14 @@ export function parseFrontmatter(
   return parseYamlLike(match[1]) as unknown as ParsedSkillFrontmatter;
 }
 
+/**
+ * 去除 JSON / JSON5 中的尾随逗号（如 `[1, 2,]`、`{"a":1,}`）。
+ * 只移除紧接在 `}` 或 `]` 之前的逗号（允许中间任意空白符）。
+ */
+function stripTrailingCommas(s: string): string {
+  return s.replace(/,[ \t\r\n]*([}\]])/g, "$1");
+}
+
 /** 简单的 YAML-like 解析器（对技能 frontmatter 格式定制） */
 function parseYamlLike(yaml: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -72,12 +80,16 @@ function parseYamlLike(yaml: string): Record<string, unknown> {
       continue;
     }
 
-    // 内联 JSON 对象 { ... }
+    // 内联 JSON 对象 { ... }（支持 JSON5 尾随逗号）
     if (rest.startsWith("{")) {
       try {
         result[key] = JSON.parse(rest);
       } catch {
-        result[key] = rest;
+        try {
+          result[key] = JSON.parse(stripTrailingCommas(rest));
+        } catch {
+          result[key] = rest;
+        }
       }
       i++;
       continue;
@@ -161,13 +173,28 @@ function parseYamlLike(yaml: string): Record<string, unknown> {
   return result;
 }
 
-/** 解析缩进块（列表或对象） */
+/** 解析缩进块（列表或对象）。若块以 `{` 或 `[` 开头，优先尝试 JSON 解析。 */
 function parseYamlBlock(lines: string[]): unknown {
   const nonempty = lines.filter((l) => l.trim() !== "");
   if (nonempty.length === 0) return null;
 
   const firstIndent = nonempty[0].match(/^(\s*)/)?.[1].length ?? 0;
   const firstTrimmed = nonempty[0].trimStart();
+
+  // 若块以 JSON 开始符号开头（`{` 或 `[`），优先尝试当作 JSON 解析。
+  // 支持 JSON5 风格的尾随逗号：先直接解析，失败后去尾随逗号再重试。
+  if (firstTrimmed.startsWith("{") || firstTrimmed.startsWith("[")) {
+    const raw = lines.join("\n");
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      try {
+        return JSON.parse(stripTrailingCommas(raw)) as unknown;
+      } catch {
+        // 两次均失败，fallthrough 到 YAML-like 解析
+      }
+    }
+  }
 
   // 列表块
   if (firstTrimmed.startsWith("- ") || firstTrimmed === "-") {

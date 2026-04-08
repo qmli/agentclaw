@@ -42,6 +42,12 @@ export interface RuntimeEligibilityOpts {
   hasBin: (bin: string) => boolean;
   hasEnv: (envName: string) => boolean;
   isConfigPathTruthy: (configPath: string) => boolean;
+  /**
+   * 当前环境可用的工具名列表（如 ["web_fetch"]）。
+   * 若为 undefined，则跳过工具可用性检查（向后兼容）。
+   * 若提供，则 requires.tools 中的每个工具都必须在列表中出现，否则技能不合格。
+   */
+  availableTools?: string[];
 }
 
 /**
@@ -87,6 +93,13 @@ export function evaluateRuntimeEligibility(
   // 必须为 truthy 的配置路径
   for (const configPath of requires.config ?? []) {
     if (!opts.isConfigPathTruthy(configPath)) return false;
+  }
+
+  // 工具可用性检查：仅当 availableTools 被明确传入时才做检查
+  if (opts.availableTools !== undefined) {
+    for (const tool of requires.tools ?? []) {
+      if (!opts.availableTools.includes(tool)) return false;
+    }
   }
 
   return true;
@@ -140,6 +153,8 @@ function getConfigValue(config: SkillsConfig, dotPath: string): unknown {
 export interface ShouldIncludeSkillOpts {
   entry: SkillEntry;
   config: SkillsConfig;
+  /** 透传给 evaluateRuntimeEligibility 的工具可用列表 */
+  availableTools?: string[];
 }
 
 /**
@@ -161,7 +176,7 @@ export function shouldIncludeSkill(opts: ShouldIncludeSkillOpts): boolean {
   // 2. bundled 白名单
   if (!isBundledSkillAllowed(entry, config.allowBundled)) return false;
 
-  // 3. 运行时资格评估
+  // 3. 运行时资格评估（含可选工具可用性检查）
   return evaluateRuntimeEligibility({
     os: entry.metadata?.os,
     always: entry.metadata?.always,
@@ -175,15 +190,23 @@ export function shouldIncludeSkill(opts: ShouldIncludeSkillOpts): boolean {
         (skillConfig?.apiKey && entry.metadata?.primaryEnv === envName),
       ),
     isConfigPathTruthy: (dotPath) => Boolean(getConfigValue(config, dotPath)),
+    availableTools: opts.availableTools,
   });
 }
 
 /**
  * 过滤技能列表，仅保留在当前环境中有资格运行的技能。
+ *
+ * @param opts.availableTools  当前 gateway/runtime 可用的工具名列表。
+ *   若提供，则拥有 requires.tools 中不可用工具的技能将被过滤掉。
+ *   若不提供，则跳过工具可用性检查（向后兼容）。
  */
 export function filterSkillEntries(
   entries: SkillEntry[],
   config: SkillsConfig,
+  opts?: { availableTools?: string[] },
 ): SkillEntry[] {
-  return entries.filter((entry) => shouldIncludeSkill({ entry, config }));
+  return entries.filter((entry) =>
+    shouldIncludeSkill({ entry, config, availableTools: opts?.availableTools }),
+  );
 }
