@@ -48,7 +48,7 @@ const TOOL_MAP: Record<string, OpenAI.Chat.ChatCompletionTool> = {
           query: {
             type: "string",
             description:
-              "The search query. Include date context for time-sensitive queries (e.g. '伊朗新闻 2024-04').",
+              "The search query. Include date context for time-sensitive queries.",
           },
         },
         required: ["query"],
