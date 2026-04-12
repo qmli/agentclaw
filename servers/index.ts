@@ -46,6 +46,13 @@ const config: GatewayConfig = {
         }
       : undefined,
 
+    // Ollama 无需 API Key，始终启用；可通过环境变量覆盖地址和默认模型
+    ollama: {
+      apiKey: process.env.OLLAMA_API_KEY ?? 'ollama',
+      baseUrl: process.env.OLLAMA_BASE_URL, // 未设置则在 agents/openais/constants.ts 中使用默认值
+      defaultModel: process.env.OLLAMA_DEFAULT_MODEL ?? 'llama3.2',
+    },
+
     custom: process.env.CUSTOM_API_KEY
       ? {
           apiKey: process.env.CUSTOM_API_KEY,

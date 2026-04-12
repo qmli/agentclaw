@@ -1,6 +1,29 @@
 import { useState, useRef, useEffect, KeyboardEvent, useCallback } from "react";
 import "./Chat.css";
 
+type LLMProvider = "openai" | "deepseek" | "ollama" | "custom";
+
+const PROVIDER_LABELS: Record<LLMProvider, string> = {
+  openai: "OpenAI",
+  deepseek: "DeepSeek",
+  ollama: "Ollama (本地)",
+  custom: "自定义",
+};
+
+const PROVIDER_DEFAULT_MODELS: Record<LLMProvider, string> = {
+  openai: "gpt-4o",
+  deepseek: "deepseek-chat",
+  ollama: "qwen3-vl:8b",
+  custom: "",
+};
+
+/** Ollama 本地预设模型列表（点击可快速切换） */
+const OLLAMA_PRESET_MODELS = [
+  { id: "qwen3-vl:8b", label: "Qwen3-VL 8B", desc: "视觉·多模态", tools: false },
+  { id: "gemma3:4b",   label: "Gemma3 4B",   desc: "轻量推理·Google", tools: false },
+  { id: "llama3.2",    label: "Llama 3.2",    desc: "通用对话·Meta",  tools: true  },
+];
+
 // 文件/图片附件
 interface FileAttachment {
   name: string;
@@ -96,6 +119,16 @@ export default function Chat() {
 
   // lastError: 最近一次连接或请求错误，用于页面提示。
   const [lastError, setLastError] = useState("");
+
+  // 模型选择器状态（从 localStorage 恢复，刷新后保留选择）
+  const [provider, setProvider] = useState<LLMProvider>(() => {
+    const saved = localStorage.getItem("ac_provider") as LLMProvider | null;
+    return saved && saved in PROVIDER_LABELS ? saved : "deepseek";
+  });
+  const [model, setModel] = useState(() => {
+    return localStorage.getItem("ac_model") ?? PROVIDER_DEFAULT_MODELS["deepseek"];
+  });
+  const [showModelPicker, setShowModelPicker] = useState(false);
 
   // selectedFiles: 待上传的文件列表（未发送前的预览）。
   const [selectedFiles, setSelectedFiles] = useState<FileAttachment[]>([]);
@@ -255,6 +288,19 @@ export default function Chat() {
     };
   }, [closeSocket]);
 
+  // 点击外部时关闭模型选择器下拉
+  useEffect(() => {
+    if (!showModelPicker) return;
+    function handleClickOutside(e: MouseEvent) {
+      const wrap = document.querySelector(".model-picker-wrap");
+      if (wrap && !wrap.contains(e.target as Node)) {
+        setShowModelPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showModelPicker]);
+
   // 当消息变化时，将视图滚动到最底部，保证最新消息可见。
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -279,6 +325,15 @@ export default function Chat() {
         Math.min(textareaRef.current.scrollHeight, 200) + "px";
     }
   }, [input]);
+
+  // 切换 provider 时自动填入默认模型
+  function handleProviderChange(p: LLMProvider) {
+    const defaultModel = PROVIDER_DEFAULT_MODELS[p];
+    setProvider(p);
+    setModel(defaultModel);
+    localStorage.setItem("ac_provider", p);
+    localStorage.setItem("ac_model", defaultModel);
+  }
 
   // 新建会话：创建新 id，插入默认欢迎语并切换到该会话。
   function newConversation() {
@@ -446,6 +501,8 @@ export default function Chat() {
       type: "chat" as const,
       id: requestId,
       stream: true,
+      provider,
+      ...(model.trim() ? { model: model.trim() } : {}),
       messages: [...history, { role: "user" as const, content: text }],
     };
 
@@ -561,13 +618,91 @@ export default function Chat() {
       <main className="chat-main">
         <header className="chat-header">
           <span>{activeConv?.title}</span>
-          <div className="conn-status-wrap">
-            <span className={`conn-status ${connection}`}>{connection}</span>
-            {connection !== "open" && (
-              <button className="reconnect-btn" onClick={connectGateway}>
-                重连
+          <div className="header-right">
+            {/* 模型选择器 */}
+            <div className="model-picker-wrap">
+              <button
+                className="model-picker-btn"
+                onClick={() => setShowModelPicker((v) => !v)}
+                title="切换模型"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" />
+                </svg>
+                <span>{PROVIDER_LABELS[provider]}</span>
+                {model && <span className="model-name-tag">{model}</span>}
               </button>
-            )}
+              {showModelPicker && (
+                <div className="model-picker-dropdown">
+                  <label className="picker-label">提供方</label>
+                  <select
+                    className="picker-select"
+                    value={provider}
+                    onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
+                  >
+                    {(Object.keys(PROVIDER_LABELS) as LLMProvider[]).map((p) => (
+                      <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+                    ))}
+                  </select>
+                  <label className="picker-label">模型</label>
+                  {provider === "ollama" && (
+                    <div className="ollama-presets">
+                      {OLLAMA_PRESET_MODELS.map((m) => (
+                        <button
+                          key={m.id}
+                          className={`ollama-preset-chip ${model === m.id ? "active" : ""}`}
+                          onClick={() => {
+                            setModel(m.id);
+                            localStorage.setItem("ac_model", m.id);
+                          }}
+                          title={m.tools ? "支持工具调用" : "不支持工具调用（纯文本对话）"}
+                        >
+                          <span className="chip-left">
+                            <span className="chip-label">{m.label}</span>
+                            <span className="chip-desc">{m.desc}</span>
+                          </span>
+                          <span className={`chip-tools-badge ${m.tools ? "supported" : "unsupported"}`}>
+                            {m.tools ? "🔧 工具" : "💬 纯文本"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    className="picker-input"
+                    type="text"
+                    value={model}
+                    onChange={(e) => {
+                      setModel(e.target.value);
+                      localStorage.setItem("ac_model", e.target.value);
+                    }}
+                    placeholder={
+                      provider === "ollama"
+                        ? "或输入自定义模型名，如 qwen2.5:14b"
+                        : provider === "openai"
+                        ? "如 gpt-4o / o1"
+                        : provider === "deepseek"
+                        ? "如 deepseek-chat / deepseek-reasoner"
+                        : "模型名称"
+                    }
+                  />
+                  {provider === "ollama" && (
+                    <p className="picker-hint">
+                      需本地已运行 Ollama，并已拉取对应模型（<code>ollama pull {model || "模型名"}</code>）
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="conn-status-wrap">
+              <span className={`conn-status ${connection}`}>{connection}</span>
+              {connection !== "open" && (
+                <button className="reconnect-btn" onClick={connectGateway}>
+                  重连
+                </button>
+              )}
+            </div>
           </div>
         </header>
 

@@ -1,7 +1,7 @@
 // ====== 消息协议类型 ======
 
 /** 支持的 LLM 提供方 */
-export type LLMProvider = "openai" | "deepseek" | "custom";
+export type LLMProvider = "openai" | "deepseek" | "ollama" | "custom";
 
 /** 聊天角色 */
 export type ChatRole = "system" | "user" | "assistant" | "tool";
@@ -105,6 +105,7 @@ export interface GatewayConfig {
   providers: {
     openai?: ProviderConfig;
     deepseek?: ProviderConfig;
+    ollama?: ProviderConfig;
     custom?: ProviderConfig;
   };
   /** 默认使用的提供方 */

@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "http";
-import { chatCompletion } from "./openai-http.js";
+import { chatCompletion } from "../agents/openais/index.js";
 import { BUILT_IN_TOOL_NAMES } from "./tool-executor.js";
 import type {
   GatewayConfig,
