@@ -4,9 +4,13 @@
   "version": "0.0.1",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "openclaw": "./dist/src/cli/index.js"
+  },
   "scripts": {
     "dev": "tsx watch index.ts",
     "debug": "tsx --inspect-brk index.ts",
+    "cli": "tsx src/cli/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },

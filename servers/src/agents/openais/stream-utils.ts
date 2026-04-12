@@ -15,7 +15,6 @@ export function parseToolArgs(raw: string): Record<string, unknown> {
     return {};
   }
 }
-
 export interface PendingToolCall {
   id: string;
   name: string;

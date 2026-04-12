@@ -1,5 +1,9 @@
 /** 内置工具的服务端执行层 */
 
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
 /**
  * 当前 gateway 提供的所有内置工具名。
  * 作为唯一权威来源：
@@ -9,8 +13,14 @@
 export const BUILT_IN_TOOL_NAMES = Object.freeze([
   "web_fetch",
   "web_search",
+  "read",
 ] as const);
 export type BuiltInToolName = (typeof BUILT_IN_TOOL_NAMES)[number];
+
+/** 工具执行上下文（如工作区目录，用于 read 工具路径安全校验） */
+export interface ToolExecutionContext {
+  workspaceDir?: string;
+}
 
 const WEB_FETCH_MAX_CHARS = 8_000;
 const WEB_FETCH_TIMEOUT_MS = 15_000;
@@ -289,17 +299,90 @@ export async function executeWebFetch(
   }
 }
 
+// ====== read 工具 ======
+
+const READ_MAX_CHARS = 256_000;
+
+/**
+ * 读取本地文件内容。
+ * 安全限制：只允许读取用户家目录（~/）或 workspaceDir 内的文件，
+ * 防止读取系统文件。
+ */
+export async function executeRead(
+  filePath: string,
+  context?: ToolExecutionContext,
+): Promise<string> {
+  if (!filePath.trim()) return "[read error] 路径不能为空。";
+
+  // 展开 ~/
+  const expanded =
+    filePath === "~"
+      ? os.homedir()
+      : filePath.startsWith("~/") || filePath.startsWith("~\\")
+        ? path.join(os.homedir(), filePath.slice(2))
+        : filePath;
+
+  const normalized = path.normalize(expanded);
+  const home = os.homedir();
+
+  // 安全检查：路径必须在家目录或 workspaceDir 内
+  const underHome =
+    normalized === home || normalized.startsWith(home + path.sep);
+  const underWorkspace = context?.workspaceDir
+    ? normalized.startsWith(path.normalize(context.workspaceDir) + path.sep) ||
+      normalized === path.normalize(context.workspaceDir)
+    : false;
+
+  if (!underHome && !underWorkspace) {
+    return `[read error] 出于安全限制，只允许读取家目录或工作区内的文件: ${filePath}`;
+  }
+
+  // 检查路径是否存在
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(normalized);
+  } catch {
+    return `[read error] 文件不存在: ${filePath}`;
+  }
+
+  if (stat.isDirectory()) {
+    // 目录：列出子项
+    try {
+      const entries = fs.readdirSync(normalized, { withFileTypes: true });
+      const lines = entries.map(
+        (e) => `${e.isDirectory() ? "d" : "f"}  ${e.name}`,
+      );
+      return `目录: ${normalized}\n\n${lines.join("\n")}`;
+    } catch (err) {
+      return `[read error] 无法列出目录: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+
+  // 文件：读取内容
+  try {
+    const content = fs.readFileSync(normalized, "utf-8");
+    return content.length > READ_MAX_CHARS
+      ? content.slice(0, READ_MAX_CHARS) + "\n...[内容已截断]"
+      : content;
+  } catch (err) {
+    return `[read error] ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
 // ====== 统一工具分发 ======
 
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
+  context?: ToolExecutionContext,
 ): Promise<string> {
   switch (name) {
     case "web_fetch":
       return executeWebFetch(String(args["url"] ?? ""));
     case "web_search":
       return executeWebSearch(String(args["query"] ?? ""));
+    case "read":
+      return executeRead(String(args["path"] ?? ""), context);
     default:
       return `[tool error] 未知工具: ${name}`;
   }

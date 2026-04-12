@@ -159,23 +159,22 @@ export function createGateway(config: GatewayConfig): WebSocketServer {
     console.log(`[gateway] Client connected  ip=${req.socket.remoteAddress}`);
 
     ws.on("message", (data) => {
-      handleMessage(ws, ctx, data.toString(), config);
+      const raw = data.toString();
+      // 客户端文本心跳（type: ping）在路由到 handleMessage 之前先处理
+      try {
+        const parsed = JSON.parse(raw) as { type: string };
+        if (parsed.type === "ping") {
+          send(ws, { type: "pong", ts: Date.now() });
+          return;
+        }
+      } catch {
+        // 非 JSON，交由 handleMessage 报告解析错误
+      }
+      handleMessage(ws, ctx, raw, config);
     });
 
     ws.on("ping", () => {
       ws.pong();
-    });
-
-    // 客户端主动心跳 (type: ping 文本消息)
-    ws.on("message", (data) => {
-      try {
-        const parsed = JSON.parse(data.toString()) as { type: string };
-        if (parsed.type === "ping") {
-          send(ws, { type: "pong", ts: Date.now() });
-        }
-      } catch {
-        // 已在上方统一处理，忽略
-      }
     });
 
     ws.on("close", () => {
