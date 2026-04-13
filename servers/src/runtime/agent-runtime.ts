@@ -1,12 +1,23 @@
-import type { ChatMessage, GatewayConfig, WsChatRequest } from "../gateway/types.js";
-import { chatCompletion } from "../agents/openais/index.js";
+import type {
+  ChatMessage,
+  GatewayConfig,
+  WsChatRequest,
+} from "../gateway/types.js";
+import { runAgent } from "../agents/pi/index.js";
 import { BUILT_IN_TOOL_NAMES } from "../gateway/tool-executor.js";
 import { ensureSkillSnapshot } from "../agents/skills/index.js";
 import type { SkillSnapshot } from "../agents/skills/index.js";
-import type { AgentEvent, AgentRunOptions, AgentRuntimeConfig } from "./types.js";
+import type {
+  AgentEvent,
+  AgentRunOptions,
+  AgentRuntimeConfig,
+} from "./types.js";
 
 /**
  * AgentRuntime —— 独立的 Agent 运行时，无需 WebSocket 即可使用。
+ *
+ * 内部调用 agents/pi/run.ts 的 runAgent() 驱动对话循环，
+ * 并通过事件队列将回调式 API 桥接为 AsyncGenerator 流式接口。
  *
  * 用法示例：
  *
@@ -53,7 +64,10 @@ export class AgentRuntime {
 
     // 注入自定义 system prompt（置于消息最前）
     if (options.systemPrompt) {
-      messages = [{ role: "system", content: options.systemPrompt }, ...messages];
+      messages = [
+        { role: "system", content: options.systemPrompt },
+        ...messages,
+      ];
     }
 
     // 注入 skills 快照（若配置了 workspaceDir）
@@ -85,7 +99,7 @@ export class AgentRuntime {
       max_tokens: options.maxTokens,
     };
 
-    // 将回调式 chatCompletion 桥接为 AsyncGenerator
+    // 将回调式 runAgent 桥接为 AsyncGenerator
     // 使用事件队列 + Promise 信号实现背压感知的流式传递
     const queue: AgentEvent[] = [];
     let notify: (() => void) | null = null;
@@ -103,39 +117,52 @@ export class AgentRuntime {
         notify = resolve;
       });
 
-    // 启动 chatCompletion（不 await），让其在后台异步执行并通过回调推送事件
-    chatCompletion(
-      request,
-      this.gatewayConfig,
-      {
-        onChunk(delta, model) {
-          push({ type: "chunk", delta, ...(model ? { model } : {}) });
+    // 启动 runAgent（后台运行，通过回调推送事件）
+    try {
+      runAgent(
+        request,
+        this.gatewayConfig,
+        {
+          onChunk(delta, model) {
+            push({ type: "chunk", delta, ...(model ? { model } : {}) });
+          },
+          onDone(usage) {
+            finished = true;
+            push({ type: "done", usage });
+          },
+          onError(code, message) {
+            finished = true;
+            push({ type: "error", code, message });
+          },
+          onToolStart(toolName, args) {
+            push({ type: "tool_start", toolName, args });
+          },
+          onToolEnd(toolName, result) {
+            push({ type: "tool_end", toolName, result });
+          },
         },
-        onDone(usage) {
-          finished = true;
-          push({ type: "done", usage });
-        },
-        onError(code, message) {
-          finished = true;
-          push({ type: "error", code, message });
-        },
-      },
-      { toolNames: this.skillSnapshot?.toolNames },
-    ).catch((err: unknown) => {
+        { toolNames: this.skillSnapshot?.toolNames },
+      );
+    } catch (err: unknown) {
       finished = true;
       push({
         type: "error",
         code: "RUNTIME_ERROR",
         message: err instanceof Error ? err.message : String(err),
       });
-    });
+    }
 
     // 消费队列，直到收到 done / error 事件
     while (true) {
       if (queue.length > 0) {
         const event = queue.shift()!;
         yield event;
-        if (event.type === "done" || event.type === "error") return;
+        if (event.type === "done" || event.type === "error") {
+          if (event.type === "error") {
+            console.error(`[runtime] agent error: [${event.code}] ${event.message}`);
+          }
+          return;
+        }
       } else if (finished) {
         return;
       } else {

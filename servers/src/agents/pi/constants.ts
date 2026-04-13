@@ -6,7 +6,7 @@ export const OLLAMA_BASE_URL = "http://localhost:11434/v1";
 
 /**
  * Ollama 中已知支持 function calling 的模型名前缀。
- * 不在列表中的模型一律视为不支持工具，发送请求时自动剔除 tools 字段。
+ * 不在列表中的模型会禁用 tools，避免 API 报错。
  * 参考：https://ollama.com/search?c=tools
  */
 export const OLLAMA_TOOL_CAPABLE_PREFIXES = [
@@ -23,6 +23,3 @@ export const OLLAMA_TOOL_CAPABLE_PREFIXES = [
   "nexusraven",
   "aya-expanse",
 ] as const;
-
-/** 最多连续调用工具的轮次，防止无限循环 */
-export const MAX_TOOL_ITERATIONS = 10;

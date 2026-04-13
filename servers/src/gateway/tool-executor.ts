@@ -8,7 +8,7 @@ import os from "node:os";
  * 当前 gateway 提供的所有内置工具名。
  * 作为唯一权威来源：
  *   - ws-server.ts 将其传给 ensureSkillSnapshot（availableTools 过滤）
- *   - agents/openais/tool-map.ts 的 TOOL_MAP 中对应 key 组装 LLM tools 数组
+ *   - agents/pi/tools.ts 的 PI_TOOL_MAP 中对应 key 组装 pi AgentTool 数组
  */
 export const BUILT_IN_TOOL_NAMES = Object.freeze([
   "web_fetch",
