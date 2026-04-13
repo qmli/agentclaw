@@ -1,22 +1,18 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "http";
-import { chatCompletion } from "../agents/openais/index.js";
-import { BUILT_IN_TOOL_NAMES } from "./tool-executor.js";
 import type {
   GatewayConfig,
   WsClientMessage,
   WsServerMessage,
   WsChatRequest,
 } from "./types.js";
-import { ensureSkillSnapshot } from "../agents/skills/index.js";
-import type { SkillSnapshot } from "../agents/skills/index.js";
+import { AgentRuntime } from "../runtime/agent-runtime.js";
+import type { AgentEvent } from "../runtime/types.js";
 
 /** 每个连接维护的上下文 */
 interface ConnectionContext {
-  /** 正在运行的请求：requestId → AbortController */
-  pending: Map<string, AbortController>;
-  /** 当前技能快照（按版本缓存，避免每次重建） */
-  skillSnapshot?: SkillSnapshot;
+  /** 正在运行的请求：requestId → AsyncGenerator */
+  pending: Map<string, AsyncGenerator<AgentEvent>>;
 }
 
 /** 向客户端安全发送 JSON 消息 */
@@ -37,59 +33,69 @@ function isOriginAllowed(
 }
 
 /** 处理单条聊天请求 */
+/**
+ * 处理传入的 WebSocket 聊天请求，并将响应实时发送回客户端。
+ *
+ * 通过代理运行时执行聊天请求，并将实时事件（如内容片段、完成或错误）发送回 WebSocket 连接。
+ *
+ * @param ws - 用于发送响应的 WebSocket 连接
+ * @param ctx - 包含待处理请求追踪信息的连接上下文
+ * @param request - 包含消息和模型参数的传入聊天请求
+ * @param runtime - 用于执行聊天逻辑的代理运行时实例
+ *
+ * @returns 当聊天流完成或发生错误时解析的 Promise
+ *
+ * @remarks
+ * - 将生成器存储在 ctx.pending 中，以跟踪活动请求
+ * - 支持多种事件类型的流式传输："chunk"（令牌更新）、"done"（完成及使用情况）、"error"（失败）
+ * - 无论结果如何，都会在 finally 块中自动清理待处理请求
+ * - 支持扩展以增加其他事件类型，如 "tool_start" 和 "tool_end"
+ */
 async function handleChat(
   ws: WebSocket,
   ctx: ConnectionContext,
   request: WsChatRequest,
-  config: GatewayConfig,
+  runtime: AgentRuntime,
 ): Promise<void> {
   const { id } = request;
 
-  // 注入 skills prompt：将快照内容作为首条 system 消息
-  let messages = request.messages;
-  if (config.workspaceDir) {
-    try {
-      ctx.skillSnapshot = await ensureSkillSnapshot(
-        config.workspaceDir,
-        ctx.skillSnapshot,
-        { availableTools: [...BUILT_IN_TOOL_NAMES] },
-      );
-      if (ctx.skillSnapshot.prompt) {
-        messages = [
-          { role: "system", content: ctx.skillSnapshot.prompt },
-          ...messages,
-        ];
+  const gen = runtime.run(request.messages, {
+    provider: request.provider,
+    model: request.model,
+    temperature: request.temperature,
+    maxTokens: request.max_tokens,
+  });
+
+  ctx.pending.set(id, gen);
+
+  try {
+    for await (const event of gen) {
+      switch (event.type) {
+        case "chunk":
+          send(ws, {
+            type: "chunk",
+            id,
+            delta: event.delta,
+            ...(event.model ? { model: event.model } : {}),
+          });
+          break;
+        case "done":
+          send(ws, { type: "done", id, usage: event.usage });
+          break;
+        case "error":
+          send(ws, {
+            type: "error",
+            id,
+            code: event.code,
+            message: event.message,
+          });
+          break;
+        // tool_start / tool_end 可按需扩展为新消息类型
       }
-    } catch (err) {
-      console.warn(
-        "[gateway] skills snapshot build failed, skipping injection:",
-        err,
-      );
     }
+  } finally {
+    ctx.pending.delete(id);
   }
-
-  const ac = await chatCompletion(
-    { ...request, messages },
-    config,
-    {
-      onChunk(delta, model) {
-        send(ws, { type: "chunk", id, delta, ...(model ? { model } : {}) });
-      },
-      onDone(usage) {
-        ctx.pending.delete(id);
-        send(ws, { type: "done", id, usage });
-      },
-      onError(code, message) {
-        ctx.pending.delete(id);
-        send(ws, { type: "error", id, code, message });
-      },
-    },
-    // 按快照中声明的工具需求动态开启对应 LLM function tools
-    { toolNames: ctx.skillSnapshot?.toolNames },
-  );
-
-  // 将 AbortController 注册到连接上下文，以支持 cancel 消息
-  ctx.pending.set(id, ac);
 }
 
 /** 处理客户端消息 */
@@ -97,7 +103,7 @@ function handleMessage(
   ws: WebSocket,
   ctx: ConnectionContext,
   raw: string,
-  config: GatewayConfig,
+  runtime: AgentRuntime,
 ): void {
   let msg: WsClientMessage;
   try {
@@ -114,15 +120,15 @@ function handleMessage(
 
   switch (msg.type) {
     case "chat":
-      handleChat(ws, ctx, msg, config).catch(() => {
+      handleChat(ws, ctx, msg, runtime).catch(() => {
         // handleChat 内部已处理错误，此处忽略
       });
       break;
 
     case "cancel": {
-      const ac = ctx.pending.get(msg.id);
-      if (ac) {
-        ac.abort();
+      const gen = ctx.pending.get(msg.id);
+      if (gen) {
+        gen.return(undefined).catch(() => {});
         ctx.pending.delete(msg.id);
       }
       break;
@@ -140,6 +146,13 @@ function handleMessage(
 
 /** 创建并启动 WebSocket 网关服务 */
 export function createGateway(config: GatewayConfig): WebSocketServer {
+  // 单实例 AgentRuntime，skill 快照按版本缓存，所有连接共享
+  const runtime = new AgentRuntime({
+    providers: config.providers,
+    defaultProvider: config.defaultProvider,
+    workspaceDir: config.workspaceDir,
+  });
+
   const wss = new WebSocketServer({ port: config.port });
 
   wss.on("listening", () => {
@@ -170,7 +183,7 @@ export function createGateway(config: GatewayConfig): WebSocketServer {
       } catch {
         // 非 JSON，交由 handleMessage 报告解析错误
       }
-      handleMessage(ws, ctx, raw, config);
+      handleMessage(ws, ctx, raw, runtime);
     });
 
     ws.on("ping", () => {
@@ -178,9 +191,9 @@ export function createGateway(config: GatewayConfig): WebSocketServer {
     });
 
     ws.on("close", () => {
-      // 连接关闭时取消所有挂起请求
-      for (const ac of ctx.pending.values()) {
-        ac.abort();
+      // 连接关闭时终止所有挂起的 generator
+      for (const gen of ctx.pending.values()) {
+        gen.return(undefined).catch(() => {});
       }
       ctx.pending.clear();
       console.log(
