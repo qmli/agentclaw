@@ -9,7 +9,7 @@ import type {
 } from "../../gateway/types.js";
 import { BUILT_IN_TOOL_NAMES } from "../../gateway/tool-executor.js";
 import type { ToolExecutionContext } from "../../gateway/tool-executor.js";
-import { buildModel, ollamaSupportsTools } from "./model.js";
+import { buildModel } from "./model.js";
 import { buildTools } from "./tools.js";
 
 /** 流式块回调 */
@@ -97,12 +97,7 @@ export function runAgent(
   const toolCtx: ToolExecutionContext = { workspaceDir: config.workspaceDir };
   const piModel = buildModel(provider, modelId, config);
 
-  // Ollama 部分模型不支持 function calling，发工具定义会导致 400 错误。
-  // 其余 provider 均支持工具调用。
-  const supportsTools = provider !== "ollama" || ollamaSupportsTools(modelId);
-  const toolNames = supportsTools
-    ? (options.toolNames ?? [...BUILT_IN_TOOL_NAMES])
-    : [];
+  const toolNames = options.toolNames ?? [...BUILT_IN_TOOL_NAMES];
   const piTools = buildTools(toolNames, toolCtx);
 
   // system 消息合并为 systemPrompt

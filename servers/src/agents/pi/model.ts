@@ -1,21 +1,6 @@
 import type { Model } from "@mariozechner/pi-ai";
 import type { GatewayConfig, LLMProvider } from "../../gateway/types.js";
-import {
-  DEEPSEEK_BASE_URL,
-  OLLAMA_BASE_URL,
-  OLLAMA_TOOL_CAPABLE_PREFIXES,
-} from "./constants.js";
-
-/**
- * 判断 Ollama 模型是否支持工具调用（function calling）。
- * 不支持的模型发请求时需自动剔除 tools 字段。
- */
-export function ollamaSupportsTools(model: string): boolean {
-  const lower = model.toLowerCase();
-  return OLLAMA_TOOL_CAPABLE_PREFIXES.some((prefix) =>
-    lower.startsWith(prefix),
-  );
-}
+import { DEEPSEEK_BASE_URL, OLLAMA_BASE_URL } from "./constants.js";
 
 /**
  * 根据 provider 和模型 ID，从 GatewayConfig 构造 pi-ai Model 对象。

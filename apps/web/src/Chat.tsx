@@ -19,9 +19,19 @@ const PROVIDER_DEFAULT_MODELS: Record<LLMProvider, string> = {
 
 /** Ollama 本地预设模型列表（点击可快速切换） */
 const OLLAMA_PRESET_MODELS = [
-  { id: "qwen3-vl:8b", label: "Qwen3-VL 8B", desc: "视觉·多模态", tools: false },
-  { id: "gemma3:4b",   label: "Gemma3 4B",   desc: "轻量推理·Google", tools: false },
-  { id: "llama3.2",    label: "Llama 3.2",    desc: "通用对话·Meta",  tools: true  },
+  {
+    id: "qwen3-vl:8b",
+    label: "Qwen3-VL 8B",
+    desc: "视觉·多模态",
+    tools: false,
+  },
+  {
+    id: "qwen3.5:4b",
+    label: "Qwen3.5 4B",
+    desc: "轻量推理·Alibaba",
+    tools: true,
+  },
+  { id: "llama3.2", label: "Llama 3.2", desc: "通用对话·Meta", tools: true },
 ];
 
 // 文件/图片附件
@@ -126,7 +136,9 @@ export default function Chat() {
     return saved && saved in PROVIDER_LABELS ? saved : "deepseek";
   });
   const [model, setModel] = useState(() => {
-    return localStorage.getItem("ac_model") ?? PROVIDER_DEFAULT_MODELS["deepseek"];
+    return (
+      localStorage.getItem("ac_model") ?? PROVIDER_DEFAULT_MODELS["deepseek"]
+    );
   });
   const [showModelPicker, setShowModelPicker] = useState(false);
 
@@ -626,7 +638,14 @@ export default function Chat() {
                 onClick={() => setShowModelPicker((v) => !v)}
                 title="切换模型"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" />
                 </svg>
@@ -639,11 +658,17 @@ export default function Chat() {
                   <select
                     className="picker-select"
                     value={provider}
-                    onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
+                    onChange={(e) =>
+                      handleProviderChange(e.target.value as LLMProvider)
+                    }
                   >
-                    {(Object.keys(PROVIDER_LABELS) as LLMProvider[]).map((p) => (
-                      <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-                    ))}
+                    {(Object.keys(PROVIDER_LABELS) as LLMProvider[]).map(
+                      (p) => (
+                        <option key={p} value={p}>
+                          {PROVIDER_LABELS[p]}
+                        </option>
+                      ),
+                    )}
                   </select>
                   <label className="picker-label">模型</label>
                   {provider === "ollama" && (
@@ -656,13 +681,19 @@ export default function Chat() {
                             setModel(m.id);
                             localStorage.setItem("ac_model", m.id);
                           }}
-                          title={m.tools ? "支持工具调用" : "不支持工具调用（纯文本对话）"}
+                          title={
+                            m.tools
+                              ? "支持工具调用"
+                              : "不支持工具调用（纯文本对话）"
+                          }
                         >
                           <span className="chip-left">
                             <span className="chip-label">{m.label}</span>
                             <span className="chip-desc">{m.desc}</span>
                           </span>
-                          <span className={`chip-tools-badge ${m.tools ? "supported" : "unsupported"}`}>
+                          <span
+                            className={`chip-tools-badge ${m.tools ? "supported" : "unsupported"}`}
+                          >
                             {m.tools ? "🔧 工具" : "💬 纯文本"}
                           </span>
                         </button>
@@ -681,15 +712,16 @@ export default function Chat() {
                       provider === "ollama"
                         ? "或输入自定义模型名，如 qwen2.5:14b"
                         : provider === "openai"
-                        ? "如 gpt-4o / o1"
-                        : provider === "deepseek"
-                        ? "如 deepseek-chat / deepseek-reasoner"
-                        : "模型名称"
+                          ? "如 gpt-4o / o1"
+                          : provider === "deepseek"
+                            ? "如 deepseek-chat / deepseek-reasoner"
+                            : "模型名称"
                     }
                   />
                   {provider === "ollama" && (
                     <p className="picker-hint">
-                      需本地已运行 Ollama，并已拉取对应模型（<code>ollama pull {model || "模型名"}</code>）
+                      需本地已运行 Ollama，并已拉取对应模型（
+                      <code>ollama pull {model || "模型名"}</code>）
                     </p>
                   )}
                 </div>
