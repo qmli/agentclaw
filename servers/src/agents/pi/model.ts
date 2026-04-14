@@ -1,6 +1,10 @@
 import type { Model } from "@mariozechner/pi-ai";
 import type { GatewayConfig, LLMProvider } from "../../gateway/types.js";
-import { DEEPSEEK_BASE_URL, OLLAMA_BASE_URL, OLLAMA_TOOL_CAPABLE_PREFIXES } from "./constants.js";
+import {
+  DEEPSEEK_BASE_URL,
+  OLLAMA_BASE_URL,
+  OLLAMA_TOOL_CAPABLE_PREFIXES,
+} from "./constants.js";
 
 /**
  * 判断 Ollama 模型是否支持工具调用（function calling）。
@@ -8,7 +12,9 @@ import { DEEPSEEK_BASE_URL, OLLAMA_BASE_URL, OLLAMA_TOOL_CAPABLE_PREFIXES } from
  */
 export function ollamaSupportsTools(model: string): boolean {
   const lower = model.toLowerCase();
-  return OLLAMA_TOOL_CAPABLE_PREFIXES.some((prefix) => lower.startsWith(prefix));
+  return OLLAMA_TOOL_CAPABLE_PREFIXES.some((prefix) =>
+    lower.startsWith(prefix),
+  );
 }
 
 /**

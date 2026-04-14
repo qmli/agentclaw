@@ -9,7 +9,7 @@ import type {
 } from "../../gateway/types.js";
 import { BUILT_IN_TOOL_NAMES } from "../../gateway/tool-executor.js";
 import type { ToolExecutionContext } from "../../gateway/tool-executor.js";
-import { buildModel } from "./model.js";
+import { buildModel, ollamaSupportsTools } from "./model.js";
 import { buildTools } from "./tools.js";
 
 /** 流式块回调 */
@@ -19,7 +19,10 @@ export type OnDone = (usage?: TokenUsage) => void;
 /** 错误回调 */
 export type OnError = (code: string, message: string) => void;
 /** 工具调用开始回调 */
-export type OnToolStart = (toolName: string, args: Record<string, unknown>) => void;
+export type OnToolStart = (
+  toolName: string,
+  args: Record<string, unknown>,
+) => void;
 /** 工具调用结束回调 */
 export type OnToolEnd = (toolName: string, result: string) => void;
 
@@ -68,10 +71,6 @@ function toPiMessage(m: ChatMessage): PiAgentMessage | null {
 /**
  * 发起 Agent 对话请求（流式，含工具调用循环）。
  *
- * 与旧版 chatCompletion 接口对齐：
- *   - 接受 WsChatRequest + GatewayConfig，通过回调推送事件
- *   - 返回 abort 函数，可随时中止当前请求
- *
  * 内部使用 @mariozechner/pi-agent-core 的 Agent 驱动多轮工具调用，
  * 替代原先基于 openai SDK 的手动循环。
  *
@@ -96,9 +95,15 @@ export function runAgent(
   const modelId = request.model ?? providerCfg?.defaultModel ?? "gpt-4o";
 
   const toolCtx: ToolExecutionContext = { workspaceDir: config.workspaceDir };
-  const toolNames = options.toolNames ?? [...BUILT_IN_TOOL_NAMES];
-  const piTools = buildTools(toolNames, toolCtx);
   const piModel = buildModel(provider, modelId, config);
+
+  // Ollama 部分模型不支持 function calling，发工具定义会导致 400 错误。
+  // 其余 provider 均支持工具调用。
+  const supportsTools = provider !== "ollama" || ollamaSupportsTools(modelId);
+  const toolNames = supportsTools
+    ? (options.toolNames ?? [...BUILT_IN_TOOL_NAMES])
+    : [];
+  const piTools = buildTools(toolNames, toolCtx);
 
   // system 消息合并为 systemPrompt
   const systemPrompt = request.messages
@@ -131,25 +136,35 @@ export function runAgent(
         break;
       }
       case "tool_execution_start": {
-        onToolStart?.(piEvent.toolName, piEvent.args as Record<string, unknown>);
+        onToolStart?.(
+          piEvent.toolName,
+          piEvent.args as Record<string, unknown>,
+        );
         break;
       }
       case "tool_execution_end": {
-        const res = piEvent.result as { content?: Array<{ text?: string }> } | undefined;
+        const res = piEvent.result as
+          | { content?: Array<{ text?: string }> }
+          | undefined;
         onToolEnd?.(piEvent.toolName, res?.content?.[0]?.text ?? "");
         break;
       }
       case "agent_end": {
         // 检查 agent 是否因错误结束（如 API 鉴权失败、网络错误等）
         const messages = piEvent.messages;
-        const lastAssistant = [...messages]
-          .reverse()
-          .find((m): m is typeof m & { role: "assistant"; stopReason: string; errorMessage?: string } =>
-            m.role === "assistant",
-          ) as { stopReason?: string; errorMessage?: string } | undefined;
+        const lastAssistant = [...messages].reverse().find(
+          (
+            m,
+          ): m is typeof m & {
+            role: "assistant";
+            stopReason: string;
+            errorMessage?: string;
+          } => m.role === "assistant",
+        ) as { stopReason?: string; errorMessage?: string } | undefined;
 
         if (lastAssistant?.stopReason === "error") {
-          const errMsg = lastAssistant.errorMessage || "Agent encountered an error";
+          const errMsg =
+            lastAssistant.errorMessage || "Agent encountered an error";
           console.error(`[run] agent_end with error: ${errMsg}`);
           onError("AGENT_ERROR", errMsg);
         } else {
@@ -174,10 +189,7 @@ export function runAgent(
   // 启动 agent（后台运行）
   const promptText = lastMsg?.content ?? "";
   agent.prompt(promptText).catch((err: unknown) => {
-    onError(
-      "RUNTIME_ERROR",
-      err instanceof Error ? err.message : String(err),
-    );
+    onError("RUNTIME_ERROR", err instanceof Error ? err.message : String(err));
   });
 
   return () => agent.abort();
